@@ -4,3 +4,5 @@ metadata:
   name: linkerd
   labels:
     linkerd.io/is-control-plane: "true"
+  annotations:
+    kustomize.linkerd/source: repo

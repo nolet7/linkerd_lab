@@ -4,8 +4,11 @@ resources:
   - namespace.yaml
   - linkerd-crds.yaml
   - linkerd-control-plane.yaml
+
 patches:
-  - path: patches/remove-namespace-from-control-plane.yaml
+  # Delete ONLY the Namespace that comes from the CLI output
+  - path: patches/remove-cli-namespace-only.yaml
     target:
       kind: Namespace
       name: linkerd
+      annotationSelector: linkerd.io/created-by
