@@ -34,23 +34,27 @@ jobs:
           mkdir -p projects/platform-tools
           mkdir -p apps/linkerd/apps
 
-      # Always render CRDs (no cluster dependency)
-      - name: Render CRDs
-        run: |
-          linkerd install --crds > apps/linkerd/base/linkerd-crds.yaml
-
-      # Try to render control-plane. If CRDs are not in the runner's cluster, this may fail.
-      # We keep the job green even if control-plane render fails; CRDs still get updated.
-      - name: Try render control-plane
+      # Always render CRDs without a cluster
+      - name: Render CRDs (ignore cluster)
         run: |
           set -e
-          if linkerd install > apps/linkerd/base/linkerd-control-plane.yaml 2>/tmp/lerr; then
+          linkerd install --ignore-cluster --crds > apps/linkerd/base/linkerd-crds.yaml
+          test -s apps/linkerd/base/linkerd-crds.yaml
+
+      # Best-effort control-plane render without a cluster
+      - name: Try render control-plane (ignore cluster)
+        run: |
+          set -e
+          if linkerd install --ignore-cluster > apps/linkerd/base/linkerd-control-plane.yaml 2>/tmp/lerr; then
+            test -s apps/linkerd/base/linkerd-control-plane.yaml
             echo "Rendered control-plane."
           else
-            echo "WARNING: control-plane render failed (likely needs CRDs installed in a cluster)."
-            echo "Leaving previous control-plane.yaml as-is (if any)."
-            rm -f apps/linkerd/base/linkerd-control-plane.yaml.new 2>/dev/null || true
-            # Do NOT delete existing control-plane.yaml; just skip updating it.
+            echo "WARNING: control-plane render failed. Leaving existing file as-is."
+            # If we wrote an empty file, restore previous version from git
+            if [ ! -s apps/linkerd/base/linkerd-control-plane.yaml ]; then
+              git checkout -- apps/linkerd/base/linkerd-control-plane.yaml || true
+            fi
+            cat /tmp/lerr || true
           fi
 
       - name: Commit changes if any
@@ -59,7 +63,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if ! git diff --quiet; then
             git add apps/linkerd/base/linkerd-*.yaml
-            git commit -m "chore(linkerd): render manifests (CRDs always; control-plane if possible)"
+            git commit -m "chore(linkerd): render manifests (ignore cluster)"
             git push
           else
             echo "No changes to commit."
