@@ -1,0 +1,67 @@
+name: Linkerd Manifests (Render Only)
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "apps/linkerd/**"
+      - "projects/platform-tools/**"
+      - ".github/workflows/linkerd-render-only.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Install Linkerd CLI
+        run: |
+          LATEST=$(curl -sL https://api.github.com/repos/linkerd/linkerd2/releases/latest | grep -Po '"tag_name": "\K.*?(?=")')
+          curl -sL "https://github.com/linkerd/linkerd2/releases/download/${LATEST}/linkerd2-cli-${LATEST#v}-linux-amd64" -o /usr/local/bin/linkerd
+          chmod +x /usr/local/bin/linkerd
+          linkerd version --client
+
+      - name: Ensure folders exist
+        run: |
+          mkdir -p apps/linkerd/base/patches
+          mkdir -p apps/linkerd/overlays/{dev,staging,prod}
+          mkdir -p projects/platform-tools
+          mkdir -p apps/linkerd/apps
+
+      # Always render CRDs (no cluster dependency)
+      - name: Render CRDs
+        run: |
+          linkerd install --crds > apps/linkerd/base/linkerd-crds.yaml
+
+      # Try to render control-plane. If CRDs are not in the runner's cluster, this may fail.
+      # We keep the job green even if control-plane render fails; CRDs still get updated.
+      - name: Try render control-plane
+        run: |
+          set -e
+          if linkerd install > apps/linkerd/base/linkerd-control-plane.yaml 2>/tmp/lerr; then
+            echo "Rendered control-plane."
+          else
+            echo "WARNING: control-plane render failed (likely needs CRDs installed in a cluster)."
+            echo "Leaving previous control-plane.yaml as-is (if any)."
+            rm -f apps/linkerd/base/linkerd-control-plane.yaml.new 2>/dev/null || true
+            # Do NOT delete existing control-plane.yaml; just skip updating it.
+          fi
+
+      - name: Commit changes if any
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet; then
+            git add apps/linkerd/base/linkerd-*.yaml
+            git commit -m "chore(linkerd): render manifests (CRDs always; control-plane if possible)"
+            git push
+          else
+            echo "No changes to commit."
+          fi
+
