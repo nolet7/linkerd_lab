@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: linkerd-all-envs
+  namespace: argocd
+spec:
+  project: platform-tools
+  source:
+    repoURL: https://github.com/nolet7/linkerd_lab.git
+    targetRevision: HEAD
+    path: apps/linkerd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
